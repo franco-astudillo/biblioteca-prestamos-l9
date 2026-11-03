@@ -3,6 +3,7 @@ import {
   Param, Post, Req, ServiceUnavailableException, UseGuards, MethodNotAllowedException,
 } from '@nestjs/common';
 import { JwtGuard } from '../auth/jwt.guard.js';
+import { PublicadorKafkaService } from '../kafka/publicador-kafka.service.js';
 import { PublicadorService } from '../mensajeria/publicador.service.js';
 import { ROUTING_KEYS } from '../mensajeria/topologia.js';
 import { CrearPrestamoDto } from './dto/crear-prestamo.dto.js';
@@ -26,6 +27,7 @@ export class PrestamosController {
   constructor(
     private readonly prestamos: PrestamosRepositorio,
     private readonly publicador: PublicadorService,
+    private readonly kafka: PublicadorKafkaService,
   ) {}
 
   @Get(RAIZ)
@@ -64,6 +66,12 @@ export class PrestamosController {
       usuarioSub: req.sub,
       hasta: nuevo.hasta,
     });
+    // Se publica despues de persistir y ademas de RabbitMQ.
+    await this.kafka.publicar('prestamo.creado', nuevo.libroId, req.sub, {
+      prestamoId: String(nuevo.id),
+      desde: nuevo.desde,
+      hasta: nuevo.hasta,
+    });
     return nuevo;
   }
 
@@ -84,6 +92,10 @@ export class PrestamosController {
       prestamoId: prestamo.id,
       libroId: prestamo.libroId,
       usuarioSub: req.sub,
+    });
+    // La key pertenece al lector, aunque devuelva el libro un bibliotecario.
+    await this.kafka.publicar('prestamo.devuelto', prestamo.libroId, prestamo.usuarioSub, {
+      prestamoId: String(prestamo.id),
     });
     return prestamo;
   }
